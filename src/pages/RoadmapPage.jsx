@@ -5,180 +5,62 @@ import {
   Background,
   BackgroundVariant,
   MarkerType,
+  useReactFlow,
+  ReactFlowProvider,
 } from '@xyflow/react';
 
-// Required React Flow stylesheet — must be imported for nodes/edges to render
 import '@xyflow/react/dist/style.css';
 
 import SkillNode, { STATUS_CYCLE, STATUS_LABELS } from '../components/SkillNode';
 import ProgressPanel from '../components/ProgressPanel';
-import { getRoadmapForCareer, buildInitialStatus } from '../utils/roadmapData';
+import SkillDetailPanel from '../components/SkillDetailPanel';
+import { getRoadmapForCareer, buildInitialStatus, ROADMAP_DATA } from '../utils/roadmapData';
 import { loadProgress, saveProgress, mergeProgress } from '../utils/storage';
 import './RoadmapPage.css';
 
-/**
- * Custom node types — defined OUTSIDE the component so React Flow does not
- * re-register them on every render (which would cause flickering/loss of nodes).
- */
+// Defined outside component so React Flow never re-registers on re-render
 const NODE_TYPES = { skillNode: SkillNode };
 
-/**
- * Default edge style: grey arrow pointing from prerequisite → dependent skill.
- */
 const DEFAULT_EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
   style: { strokeWidth: 2, stroke: '#94a3b8' },
 };
 
+// All supported careers in display form (for the switcher)
+const ALL_CAREERS = Object.keys(ROADMAP_DATA).map(
+  (key) => key.replace(/\b\w/g, (c) => c.toUpperCase())
+);
+
 /* ─────────────────────────────────────────────────────────────────────────────
-   RoadmapPage — outer shell
-   Checks whether a sample roadmap exists for the given career and either shows
-   the graph or an honest "not available yet" message.
+   FitViewButton — sits inside the ReactFlow canvas and calls fitView()
 ───────────────────────────────────────────────────────────────────────────── */
-function RoadmapPage({ career, onBack }) {
-  const roadmapTemplate = getRoadmapForCareer(career);
-
-  if (!roadmapTemplate) {
-    return (
-      <div className="roadmap-page">
-        <div className="roadmap-topbar">
-          <button
-            type="button"
-            className="roadmap-topbar__back"
-            onClick={onBack}
-            aria-label="Back to homepage"
-          >
-            ← Back to Home
-          </button>
-          <h1 className="roadmap-topbar__title">
-            Roadmap for{' '}
-            <span className="roadmap-topbar__career">"{career}"</span>
-          </h1>
-        </div>
-
-        <div className="roadmap-unavailable">
-          <div className="roadmap-unavailable__icon" aria-hidden="true">🗺️</div>
-          <h2 className="roadmap-unavailable__heading">
-            No Sample Roadmap Yet for "{career}"
-          </h2>
-          <p className="roadmap-unavailable__text">
-            We don't have a sample template for this career yet. Sample roadmaps
-            are added step by step — this is not an AI-generated or live service.
-          </p>
-          <p className="roadmap-unavailable__careers">
-            Currently available sample roadmap:{' '}
-            <strong>Software Engineer</strong>
-          </p>
-          <button
-            type="button"
-            className="roadmap-unavailable__btn"
-            onClick={onBack}
-          >
-            ← Try a Different Career
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+function FitViewButton() {
+  const { fitView } = useReactFlow();
   return (
-    <RoadmapGraph
-      career={career}
-      template={roadmapTemplate}
-      onBack={onBack}
-    />
+    <button
+      type="button"
+      className="roadmap-fitview-btn"
+      onClick={() => fitView({ padding: 0.2, duration: 400 })}
+      title="Fit roadmap to screen"
+      aria-label="Fit roadmap to screen"
+    >
+      ⊞ Fit
+    </button>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   RoadmapGraph — rendered only when we have confirmed template data.
-   Separated into its own component so hooks only run when there is a roadmap.
+   RoadmapPage — outer shell: handles career switching + "no roadmap" state
 ───────────────────────────────────────────────────────────────────────────── */
-function RoadmapGraph({ career, template, onBack }) {
-  /**
-   * skillStatus: { nodeId → 'not-started' | 'in-progress' | 'known' }
-   *
-   * Initialised by merging:
-   *   1. Fresh defaults (all 'not-started') built from the current node list.
-   *   2. Any valid saved progress loaded from localStorage for this career.
-   * Merging ensures new nodes added to a roadmap in the future always get a
-   * valid initial status even if the user has old saved data.
-   *
-   * loadProgress() returns null if nothing is saved yet, data is corrupt,
-   * or localStorage is unavailable — mergeProgress() handles null safely.
-   */
-  const [skillStatus, setSkillStatus] = useState(() =>
-    mergeProgress(
-      buildInitialStatus(template.nodes),
-      loadProgress(career)
-    )
-  );
+function RoadmapPage({ career: initialCareer, onBack }) {
+  const [career, setCareer] = useState(initialCareer);
+  const roadmapTemplate = getRoadmapForCareer(career);
 
-  /**
-   * Cycle a skill to the next status.
-   * useCallback keeps the reference stable so React Flow nodes don't
-   * needlessly re-render when other state changes.
-   */
-  const handleCycleStatus = useCallback((nodeId) => {
-    setSkillStatus((prev) => {
-      const currentIndex = STATUS_CYCLE.indexOf(prev[nodeId]);
-      const next = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
-      return { ...prev, [nodeId]: next };
-    });
-  }, []);
-
-  /**
-   * Persist the current skillStatus to localStorage whenever it changes.
-   * Each career is stored under its own key so roadmaps never overwrite
-   * each other. saveProgress() is silent on quota/access errors.
-   */
-  useEffect(() => {
-    saveProgress(career, skillStatus);
-  }, [career, skillStatus]);
-
-  /**
-   * Build the final nodes array for React Flow.
-   * We inject the current status + cycle callback into each node's data object
-   * so SkillNode can read them without needing its own state.
-   *
-   * We pass this DIRECTLY to <ReactFlow nodes={flowNodes}> (controlled mode)
-   * rather than through useNodesState, because useNodesState only reads the
-   * initial value and would freeze the nodes — making status buttons do nothing.
-   */
-  const flowNodes = useMemo(
-    () =>
-      template.nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          status: skillStatus[node.id],
-          onCycle: handleCycleStatus,
-        },
-      })),
-    [template.nodes, skillStatus, handleCycleStatus]
-  );
-
-  // Progress stats — derived from skillStatus, update on every status change.
-  // Percentage = Math.round((known / total) * 100).
-  // A skill counts as complete only when marked "Already Known".
-  // total === 0 is handled inside ProgressPanel to avoid division-by-zero.
-  const stats = useMemo(() => {
-    const counts = { 'not-started': 0, 'in-progress': 0, 'known': 0 };
-    for (const s of Object.values(skillStatus)) counts[s]++;
-    return counts;
-  }, [skillStatus]);
-
-  const total = template.nodes.length;
+  const handleCareerSwitch = (newCareer) => {
+    setCareer(newCareer);
+  };
 
   return (
-    /*
-     * .roadmap-page uses display:flex + flex-direction:column + height:100vh.
-     * This gives the page a concrete total height the browser can measure.
-     * The graph wrapper (.roadmap-graph-wrap) takes all remaining space via
-     * flex:1 and has position:relative so the inner .react-flow div can fill
-     * it with position:absolute + inset:0 — which gives React Flow a concrete
-     * pixel width AND height that it can measure with ResizeObserver.
-     */
     <div className="roadmap-page">
       {/* Top bar */}
       <div className="roadmap-topbar">
@@ -194,19 +76,166 @@ function RoadmapGraph({ career, template, onBack }) {
           Roadmap:{' '}
           <span className="roadmap-topbar__career">{career}</span>
         </h1>
+
+        {/* Career switcher */}
+        <div className="roadmap-switcher">
+          <label htmlFor="career-switch" className="roadmap-switcher__label">
+            Switch career:
+          </label>
+          <select
+            id="career-switch"
+            className="roadmap-switcher__select"
+            value={career}
+            onChange={(e) => handleCareerSwitch(e.target.value)}
+            aria-label="Switch to a different career roadmap"
+          >
+            {ALL_CAREERS.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Info banner */}
       <div className="roadmap-banner" role="note">
         <span className="roadmap-banner__icon" aria-hidden="true">ℹ️</span>
         <span>
-          <strong>Sample template</strong> — This is a curated example roadmap,
-          not AI-generated or personalised. Arrows show suggested prerequisites,
-          not absolute rules.
+          <strong>Sample template</strong> — Curated example roadmap, not AI-generated.
+          Arrows show suggested prerequisites. Progress is saved in your browser.
         </span>
       </div>
 
-      {/* Progress panel — updates live as the user cycles skill statuses */}
+      {roadmapTemplate ? (
+        <ReactFlowProvider>
+          <RoadmapGraph career={career} template={roadmapTemplate} />
+        </ReactFlowProvider>
+      ) : (
+        <div className="roadmap-unavailable">
+          <div className="roadmap-unavailable__icon" aria-hidden="true">🗺️</div>
+          <h2 className="roadmap-unavailable__heading">
+            No Sample Roadmap Yet for "{career}"
+          </h2>
+          <p className="roadmap-unavailable__text">
+            This career doesn't have a sample template yet.
+          </p>
+          <p className="roadmap-unavailable__careers">
+            Available: {ALL_CAREERS.join(', ')}
+          </p>
+          <button
+            type="button"
+            className="roadmap-unavailable__btn"
+            onClick={onBack}
+          >
+            ← Try a Different Career
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RoadmapGraph — the interactive graph + panels, only rendered when template exists
+───────────────────────────────────────────────────────────────────────────── */
+function RoadmapGraph({ career, template }) {
+  // ── Skill status state (persisted to localStorage) ────────────────────
+  const [skillStatus, setSkillStatus] = useState(() =>
+    mergeProgress(buildInitialStatus(template.nodes), loadProgress(career))
+  );
+
+  // When career changes, reload saved progress for the new career
+  useEffect(() => {
+    setSkillStatus(
+      mergeProgress(buildInitialStatus(template.nodes), loadProgress(career))
+    );
+  }, [career, template.nodes]);
+
+  // Save to localStorage on every status change
+  useEffect(() => {
+    saveProgress(career, skillStatus);
+  }, [career, skillStatus]);
+
+  // ── Selected node (for detail panel) ──────────────────────────────────
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+
+  // ── Reset confirmation state ───────────────────────────────────────────
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // ── Status cycling ────────────────────────────────────────────────────
+  const handleCycleStatus = useCallback((nodeId) => {
+    setSkillStatus((prev) => {
+      const currentIndex = STATUS_CYCLE.indexOf(prev[nodeId]);
+      const next = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
+      return { ...prev, [nodeId]: next };
+    });
+  }, []);
+
+  // ── Node selection ────────────────────────────────────────────────────
+  const handleSelectNode = useCallback((nodeId) => {
+    setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
+  }, []);
+
+  const handleClosePanel = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
+  // ── Reset progress ────────────────────────────────────────────────────
+  const handleReset = () => {
+    const fresh = buildInitialStatus(template.nodes);
+    setSkillStatus(fresh);
+    saveProgress(career, fresh);
+    setShowResetConfirm(false);
+    setSelectedNodeId(null);
+  };
+
+  // ── Build React Flow nodes (controlled mode) ──────────────────────────
+  const flowNodes = useMemo(
+    () =>
+      template.nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          status: skillStatus[node.id],
+          selected: node.id === selectedNodeId,
+          onCycle: handleCycleStatus,
+          onSelect: handleSelectNode,
+        },
+      })),
+    [template.nodes, skillStatus, selectedNodeId, handleCycleStatus, handleSelectNode]
+  );
+
+  // ── Progress stats ────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const counts = { 'not-started': 0, 'in-progress': 0, 'known': 0 };
+    for (const s of Object.values(skillStatus)) counts[s]++;
+    return counts;
+  }, [skillStatus]);
+
+  const total = template.nodes.length;
+
+  // ── Next recommended skill (first node whose prereqs are all Known) ───
+  const nextSkill = useMemo(() => {
+    // Build a map: nodeId → set of node IDs that point TO it (its prereqs)
+    const prereqsOf = {};
+    for (const node of template.nodes) prereqsOf[node.id] = [];
+    for (const edge of template.edges) {
+      if (prereqsOf[edge.target]) prereqsOf[edge.target].push(edge.source);
+    }
+
+    // Find first not-started node whose all prereqs are known
+    for (const node of template.nodes) {
+      if (skillStatus[node.id] !== 'not-started') continue;
+      const allPrereqsDone = prereqsOf[node.id].every(
+        (pid) => skillStatus[pid] === 'known'
+      );
+      if (allPrereqsDone) return node;
+    }
+    return null;
+  }, [template.nodes, template.edges, skillStatus]);
+
+  return (
+    <div className="roadmap-content">
+      {/* Progress panel */}
       <ProgressPanel
         total={total}
         known={stats.known}
@@ -214,13 +243,63 @@ function RoadmapGraph({ career, template, onBack }) {
         notStarted={stats['not-started']}
       />
 
-      {/*
-        Graph wrapper — flex:1 means it fills all vertical space not taken by
-        the bars above and legend below. position:relative is required so the
-        inner ReactFlow container (position:absolute, inset:0) can inherit the
-        measured dimensions. This is the pattern React Flow recommends for
-        flex layouts: https://reactflow.dev/error#004
-      */}
+      {/* Dashboard strip: next skill + reset */}
+      <div className="roadmap-dashboard">
+        <div className="roadmap-dashboard__next">
+          {nextSkill ? (
+            <>
+              <span className="roadmap-dashboard__next-label">▶ Next to learn:</span>
+              <button
+                type="button"
+                className="roadmap-dashboard__next-skill"
+                onClick={() => handleSelectNode(nextSkill.id)}
+                aria-label={`View details for ${nextSkill.data.label}`}
+              >
+                {nextSkill.data.label}
+              </button>
+            </>
+          ) : stats.known === total ? (
+            <span className="roadmap-dashboard__complete">🎉 Roadmap complete!</span>
+          ) : (
+            <span className="roadmap-dashboard__next-label">
+              Mark prerequisites as Known to unlock the next skill.
+            </span>
+          )}
+        </div>
+
+        <div className="roadmap-dashboard__actions">
+          {!showResetConfirm ? (
+            <button
+              type="button"
+              className="roadmap-dashboard__reset-btn"
+              onClick={() => setShowResetConfirm(true)}
+              aria-label="Reset all progress for this roadmap"
+            >
+              ↺ Reset Progress
+            </button>
+          ) : (
+            <div className="roadmap-dashboard__confirm">
+              <span>Reset all progress?</span>
+              <button
+                type="button"
+                className="roadmap-dashboard__confirm-yes"
+                onClick={handleReset}
+              >
+                Yes, reset
+              </button>
+              <button
+                type="button"
+                className="roadmap-dashboard__confirm-no"
+                onClick={() => setShowResetConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Graph */}
       <div className="roadmap-graph-wrap" aria-label="Interactive skill roadmap graph">
         <ReactFlow
           nodes={flowNodes}
@@ -229,9 +308,10 @@ function RoadmapGraph({ career, template, onBack }) {
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           fitView
           fitViewOptions={{ padding: 0.2 }}
-          minZoom={0.2}
+          minZoom={0.15}
           maxZoom={2.5}
           attributionPosition="bottom-right"
+          onPaneClick={() => setSelectedNodeId(null)}
         >
           <Controls />
           <Background
@@ -240,6 +320,7 @@ function RoadmapGraph({ career, template, onBack }) {
             size={1.5}
             color="#cbd5e1"
           />
+          <FitViewButton />
         </ReactFlow>
       </div>
 
@@ -255,9 +336,17 @@ function RoadmapGraph({ career, template, onBack }) {
           ))}
         </div>
         <span className="roadmap-legend__tip">
-          Click a node button to change status. Progress is saved in your browser.
+          Click a card for details. Progress saved in your browser.
         </span>
       </div>
+
+      {/* Skill detail panel (slide-in) */}
+      <SkillDetailPanel
+        nodeId={selectedNodeId}
+        status={selectedNodeId ? skillStatus[selectedNodeId] : null}
+        onCycle={handleCycleStatus}
+        onClose={handleClosePanel}
+      />
     </div>
   );
 }
