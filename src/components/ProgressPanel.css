@@ -1,0 +1,148 @@
+/* ProgressPanel — skill progress summary card */
+
+/* ── Outer card ─────────────────────────────────────────────────────── */
+.progress-panel {
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-6);
+  background-color: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ── Header: "Your Progress" label + percentage ─────────────────────── */
+.progress-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.progress-panel__title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progress-panel__pct {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-primary);
+  transition: color var(--transition-base);
+}
+
+/* ── Progress bar ───────────────────────────────────────────────────── */
+.progress-panel__bar-track {
+  height: 10px;
+  background-color: var(--color-bg-soft);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+.progress-panel__bar-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary-light) 0%,
+    var(--color-primary)       60%,
+    var(--color-accent)        100%
+  );
+  border-radius: var(--radius-full);
+  /* Smooth animation when the user clicks a status button */
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+}
+
+/* ── Motivational label ─────────────────────────────────────────────── */
+.progress-panel__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-light);
+  margin-bottom: var(--space-3);
+  min-height: 1.2em; /* prevent layout jump when text changes */
+}
+
+/* ── Four stat cards ────────────────────────────────────────────────── */
+.progress-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+
+.progress-panel__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-soft);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+/* Total — neutral */
+.progress-panel__stat--total {
+  border-color: var(--color-border);
+}
+
+/* Known — green tint */
+.progress-panel__stat--known {
+  border-color: rgba(16, 185, 129, 0.3);
+  background-color: #f0fdf4;
+}
+
+/* In Progress — amber tint */
+.progress-panel__stat--in-progress {
+  border-color: rgba(245, 158, 11, 0.3);
+  background-color: #fffbeb;
+}
+
+/* Not Started — neutral-light */
+.progress-panel__stat--not-started {
+  border-color: var(--color-border);
+  background-color: var(--color-bg-soft);
+}
+
+.progress-panel__stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: 800;
+  color: var(--color-text-heading);
+  line-height: 1.1;
+  transition: color var(--transition-base);
+}
+
+.progress-panel__stat--known .progress-panel__stat-value {
+  color: var(--color-success);
+}
+
+.progress-panel__stat--in-progress .progress-panel__stat-value {
+  color: #b45309; /* amber-700 */
+}
+
+.progress-panel__stat-name {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-light);
+  margin-top: var(--space-1);
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* ── Responsive: stack to 2×2 on small screens ──────────────────────── */
+@media (max-width: 640px) {
+  .progress-panel {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .progress-panel__stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── Responsive: single row on very wide screens ────────────────────── */
+@media (min-width: 1024px) {
+  .progress-panel__stats {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 480px;  /* prevent cards from becoming too wide */
+  }
+}

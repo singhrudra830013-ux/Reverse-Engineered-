@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -11,7 +11,9 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import SkillNode, { STATUS_CYCLE, STATUS_LABELS } from '../components/SkillNode';
+import ProgressPanel from '../components/ProgressPanel';
 import { getRoadmapForCareer, buildInitialStatus } from '../utils/roadmapData';
+import { loadProgress, saveProgress, mergeProgress } from '../utils/storage';
 import './RoadmapPage.css';
 
 /**
@@ -95,10 +97,21 @@ function RoadmapPage({ career, onBack }) {
 function RoadmapGraph({ career, template, onBack }) {
   /**
    * skillStatus: { nodeId → 'not-started' | 'in-progress' | 'known' }
-   * Kept in React state (in-memory only — persistence is a future step).
+   *
+   * Initialised by merging:
+   *   1. Fresh defaults (all 'not-started') built from the current node list.
+   *   2. Any valid saved progress loaded from localStorage for this career.
+   * Merging ensures new nodes added to a roadmap in the future always get a
+   * valid initial status even if the user has old saved data.
+   *
+   * loadProgress() returns null if nothing is saved yet, data is corrupt,
+   * or localStorage is unavailable — mergeProgress() handles null safely.
    */
   const [skillStatus, setSkillStatus] = useState(() =>
-    buildInitialStatus(template.nodes)
+    mergeProgress(
+      buildInitialStatus(template.nodes),
+      loadProgress(career)
+    )
   );
 
   /**
@@ -113,6 +126,15 @@ function RoadmapGraph({ career, template, onBack }) {
       return { ...prev, [nodeId]: next };
     });
   }, []);
+
+  /**
+   * Persist the current skillStatus to localStorage whenever it changes.
+   * Each career is stored under its own key so roadmaps never overwrite
+   * each other. saveProgress() is silent on quota/access errors.
+   */
+  useEffect(() => {
+    saveProgress(career, skillStatus);
+  }, [career, skillStatus]);
 
   /**
    * Build the final nodes array for React Flow.
@@ -136,7 +158,10 @@ function RoadmapGraph({ career, template, onBack }) {
     [template.nodes, skillStatus, handleCycleStatus]
   );
 
-  // Progress stats for the stats bar
+  // Progress stats — derived from skillStatus, update on every status change.
+  // Percentage = Math.round((known / total) * 100).
+  // A skill counts as complete only when marked "Already Known".
+  // total === 0 is handled inside ProgressPanel to avoid division-by-zero.
   const stats = useMemo(() => {
     const counts = { 'not-started': 0, 'in-progress': 0, 'known': 0 };
     for (const s of Object.values(skillStatus)) counts[s]++;
@@ -144,7 +169,6 @@ function RoadmapGraph({ career, template, onBack }) {
   }, [skillStatus]);
 
   const total = template.nodes.length;
-  const knownPct = Math.round((stats.known / total) * 100);
 
   return (
     /*
@@ -182,22 +206,13 @@ function RoadmapGraph({ career, template, onBack }) {
         </span>
       </div>
 
-      {/* Stats bar */}
-      <div className="roadmap-stats" aria-label="Skill progress summary">
-        <div className="roadmap-stats__item">
-          <span className="roadmap-stats__dot roadmap-stats__dot--not-started" aria-hidden="true" />
-          <span>Not Started: <strong className="roadmap-stats__count">{stats['not-started']}</strong></span>
-        </div>
-        <div className="roadmap-stats__item">
-          <span className="roadmap-stats__dot roadmap-stats__dot--in-progress" aria-hidden="true" />
-          <span>In Progress: <strong className="roadmap-stats__count">{stats['in-progress']}</strong></span>
-        </div>
-        <div className="roadmap-stats__item">
-          <span className="roadmap-stats__dot roadmap-stats__dot--known" aria-hidden="true" />
-          <span>Known: <strong className="roadmap-stats__count">{stats.known}</strong></span>
-        </div>
-        <div className="roadmap-stats__progress">{knownPct}% complete</div>
-      </div>
+      {/* Progress panel — updates live as the user cycles skill statuses */}
+      <ProgressPanel
+        total={total}
+        known={stats.known}
+        inProgress={stats['in-progress']}
+        notStarted={stats['not-started']}
+      />
 
       {/*
         Graph wrapper — flex:1 means it fills all vertical space not taken by
@@ -240,7 +255,7 @@ function RoadmapGraph({ career, template, onBack }) {
           ))}
         </div>
         <span className="roadmap-legend__tip">
-          Click a node button to change status. Progress is in-memory only.
+          Click a node button to change status. Progress is saved in your browser.
         </span>
       </div>
     </div>
