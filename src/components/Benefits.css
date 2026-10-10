@@ -1,0 +1,107 @@
+/* Benefits section styles */
+
+.benefits {
+  padding: var(--space-20) 0;
+  background-color: var(--color-bg-soft);
+}
+
+/* --- Section header --- */
+.benefits__header {
+  text-align: center;
+  margin-bottom: var(--space-12);
+}
+
+.benefits__label {
+  display: inline-block;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-3);
+}
+
+.benefits__heading {
+  font-size: var(--font-size-4xl);
+  font-weight: 700;
+  color: var(--color-text-heading);
+  margin-bottom: var(--space-4);
+}
+
+.benefits__subtext {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-light);
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* --- Benefits grid --- */
+.benefits__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-6);
+}
+
+/* --- Individual benefit card --- */
+.benefit-card {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  padding: var(--space-6);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.benefit-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.benefit-card__icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-bg);
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.benefit-card__body {
+  flex: 1;
+}
+
+.benefit-card__title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-heading);
+  margin-bottom: var(--space-2);
+}
+
+.benefit-card__desc {
+  font-size: var(--font-size-base);
+  color: var(--color-text-light);
+  line-height: 1.6;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .benefits__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .benefits__heading {
+    font-size: var(--font-size-3xl);
+  }
+}
+
+@media (max-width: 640px) {
+  .benefits {
+    padding: var(--space-16) 0;
+  }
+}
